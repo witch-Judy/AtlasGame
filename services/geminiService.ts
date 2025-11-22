@@ -34,32 +34,57 @@ export const urlToGenerativePart = async (url: string): Promise<string> => {
   });
 };
 
-// Helper to generate an image using Imagen model
-const generateSceneImage = async (prompt: string): Promise<string | undefined> => {
+// Helper to generate an image strictly when requested
+// Returns undefined on failure instead of throwing, to avoid UI errors
+export const generateImageForScene = async (
+  sceneDescription: string,
+  visualStyle: string
+): Promise<string | undefined> => {
+  // Updated Aesthetic based on user request
+  const aestheticStyle = "New Chinese style digital illustration, Guofeng, ethereal and dreamy atmosphere, semi-impasto style with watercolor textures, delicate brushstrokes. Lighting & Color: Soft cinematic lighting, volumetric lighting (sun rays), dappled light (komorebi), light and airy composition, muted pastel color palette, elegant aesthetic, high definition, 8k resolution, anime-influenced semi-realism.";
+
+  const prompt = `Scene Description: ${sceneDescription}. \n\nWorld Context: ${visualStyle}. \n\nArt Style & Aesthetic: ${aestheticStyle}`;
+  
+  // Increased length limit to accommodate the detailed style description
+  const safePrompt = prompt.substring(0, 1500);
+
+  // Strategy 1: Try Imagen 3.0
   try {
-    // Using Imagen 3 model (as per SDK best practices for generation)
-    // Or imagen-4.0-generate-001 if available in the specific environment
-    const model = 'imagen-3.0-generate-001'; 
-    
     const response = await ai.models.generateImages({
-      model,
-      prompt,
+      model: 'imagen-3.0-generate-001',
+      prompt: safePrompt,
       config: {
         numberOfImages: 1,
-        aspectRatio: '16:9', // Cinematic aspect ratio for story scenes
-      },
+        aspectRatio: '16:9',
+        outputMimeType: 'image/jpeg'
+      }
     });
-
-    const base64String = response.generatedImages?.[0]?.image?.imageBytes;
-    if (base64String) {
-      return `data:image/png;base64,${base64String}`;
-    }
-    return undefined;
+    const base64Data = response.generatedImages?.[0]?.image?.imageBytes;
+    if (base64Data) return `data:image/jpeg;base64,${base64Data}`;
   } catch (e) {
-    console.warn("Image generation failed:", e);
-    return undefined;
+    console.warn("Imagen 3.0 failed, falling back...", e);
   }
+
+  // Strategy 2: Fallback to Gemini 2.5 Flash Image
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: { parts: [{ text: safePrompt }] }
+    });
+    const parts = response.candidates?.[0]?.content?.parts;
+    if (parts) {
+      for (const part of parts) {
+        if (part.inlineData && part.inlineData.data) {
+             return `data:image/png;base64,${part.inlineData.data}`;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Image generation failed silently:", e);
+  }
+  return undefined;
 };
+
 
 export const generateWorldFromImage = async (
   imageBase64: string, 
@@ -105,7 +130,7 @@ export const generateWorldFromImage = async (
       name: data.name,
       era: data.era,
       mood: data.mood,
-      visualStyle: data.visualStyle || "Fantasy art", // Capture style
+      visualStyle: data.visualStyle || "Fantasy art",
       identity: data.identity,
       companion: data.companion,
       openingNarrative: data.openingNarrative,
@@ -134,16 +159,11 @@ export const sendChatMessage = async (
       `- [${node.status.toUpperCase()}] ${node.title}: ${node.description}`
     ).join("\n");
 
-    const styleContext = currentWorld.visualStyle 
-      ? `Visual Style Constraint: Keep images in the style of "${currentWorld.visualStyle}".` 
-      : "";
-
     const prompt = `
       ${SYSTEM_INSTRUCTION}
 
       **Current World:** ${currentWorld.name}
       **User:** ${currentWorld.identity.title}
-      ${styleContext}
       
       **Current Plot Status:**
       ${plotStatus}
@@ -151,14 +171,13 @@ export const sendChatMessage = async (
       **Task:**
       1. Advance the story based on User Input: "${userMessage}".
       2. Check if plot nodes update.
-      3. **Decide if an image is needed.** If yes, provide "imagePrompt".
+      3. Do NOT generate an imagePrompt.
       
       **Return strictly JSON:**
       {
         "content": "Narrative...",
         "choices": [ ... ],
-        "plotUpdates": { "completedNodeId": "...", "activatedNodeId": "..." },
-        "imagePrompt": "Optional: Description of the scene for the illustrator."
+        "plotUpdates": { "completedNodeId": "...", "activatedNodeId": "..." }
       }
     `;
 
@@ -191,21 +210,13 @@ export const sendChatMessage = async (
        }) as StoryNode[];
     }
 
-    // Handle Image Generation (If prompt exists)
-    let generatedImageUrl = undefined;
-    if (parsed.imagePrompt) {
-       // Combine the specific prompt with the world's visual style to enforce consistency
-       const fullImagePrompt = `${parsed.imagePrompt}, art style: ${currentWorld.visualStyle || 'cinematic fantasy'}, high quality, detailed`;
-       generatedImageUrl = await generateSceneImage(fullImagePrompt);
-    }
-
     return {
       message: {
         role: 'model',
         content: parsed.content,
         choices: parsed.choices,
         timestamp: Date.now(),
-        imageUrl: generatedImageUrl // Attach the image if generated
+        // No automatic imageUrl anymore
       },
       updatedPlotTree: newPlotTree
     };
@@ -215,7 +226,7 @@ export const sendChatMessage = async (
     return {
       message: {
         role: 'model',
-        content: "The mists of the multiverse obscure my vision...",
+        content: "The mists of the multiverse obscure my vision... (Connection error, please try again)",
         choices: [{ id: 'retry', text: "Try again", intent: 'resolve' }],
         timestamp: Date.now()
       }

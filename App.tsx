@@ -78,10 +78,6 @@ const App: React.FC = () => {
     }
 
     // 2. If no saved state, generate new (for Presets or fresh Custom)
-    // Note: Presets currently don't persist across reloads in this simple version 
-    // unless we converted them to custom. For now, Presets regenerate each time 
-    // to allow different outcomes, unless we add logic to clone them.
-    
     setIsGenerating(true);
     try {
       let base64: string = await urlToGenerativePart(template.imageUrl);
@@ -118,7 +114,7 @@ const App: React.FC = () => {
       setView('world');
     } catch (e) {
       console.error(e);
-      alert("The portal refused to open. Please try again.");
+      // Silent failure is better than blocking alerts if API is glitchy
     } finally {
       setIsGenerating(false);
     }
@@ -178,7 +174,7 @@ const App: React.FC = () => {
 
     } catch (e) {
       console.error(e);
-      alert("The universe is cloudy today. Could not interpret the shard.");
+      // Silent failure logs only
     } finally {
       setIsGenerating(false);
     }

@@ -79,8 +79,7 @@ ${STORY_MODULES}
 **Interaction Rules:**
 - If the user finishes a "Node" in the plot tree, clearly transition to the next.
 - Always offer 2-3 choices: One "Light Path" (Gentle), one "Adventure Path" (Bold), one "Fate Path" (Deep).
-- **IMAGE GENERATION:** Every 2-3 turns, or when a beautiful new location/character is revealed, you MUST provide an 'imagePrompt' field. 
-- The 'imagePrompt' must be descriptive and include the visual style of the world (e.g., "Ghibli style", "Oil painting", "Cyberpunk").
+- **VISUALS:** Do not automatically generate images. Focus on the narrative text.
 `;
 
 export const GEN_WORLD_PROMPT = `

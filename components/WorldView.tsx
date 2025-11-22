@@ -2,8 +2,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { WorldState, Message, StoryNode } from '../types';
 import IdentityCard from './IdentityCard';
-import { sendChatMessage } from '../services/geminiService';
-import { ArrowLeft, Clock, Stars, Send, Sparkles, Map, BookOpen, Image as ImageIcon } from 'lucide-react';
+import { sendChatMessage, generateImageForScene } from '../services/geminiService';
+import { ArrowLeft, Clock, Stars, Send, Sparkles, Map, BookOpen, Image as ImageIcon, Paintbrush } from 'lucide-react';
 
 interface Props {
   world: WorldState;
@@ -14,6 +14,7 @@ interface Props {
 const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [inputText, setInputText] = useState('');
+  const [generatingImgId, setGeneratingImgId] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,6 +58,26 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
     }
   };
 
+  const handleGenerateImage = async (msgIndex: number, content: string) => {
+    if (generatingImgId !== null) return; // Prevent multiple concurrent gens
+    setGeneratingImgId(msgIndex);
+
+    const newImageUrl = await generateImageForScene(content, world.visualStyle || 'fantasy');
+
+    if (newImageUrl) {
+      const newHistory = [...world.chatHistory];
+      newHistory[msgIndex] = {
+        ...newHistory[msgIndex],
+        imageUrl: newImageUrl
+      };
+      onUpdateWorld({ ...world, chatHistory: newHistory });
+    } else {
+        // Fail silently or just reset button state
+        console.warn("Image generation failed locally");
+    }
+    setGeneratingImgId(null);
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -66,7 +87,7 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
 
   const lastModelMessage = [...world.chatHistory].reverse().find(m => m.role === 'model');
   
-  // Find current chapter for subtle display (Hidden logic)
+  // Find current chapter for subtle display
   const currentChapter = world.plotTree?.find(n => n.status === 'active');
 
   return (
@@ -82,7 +103,7 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-900/90 to-transparent" />
       </div>
 
-      {/* Left Col: Meta Info (Plot Tree is now HIDDEN) */}
+      {/* Left Col: Meta Info */}
       <div className="relative z-10 w-full md:w-1/3 p-6 flex flex-col h-full border-r border-white/5 bg-slate-900/60 backdrop-blur-md">
         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
             <button 
@@ -111,7 +132,6 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
                <IdentityCard identity={world.identity} />
             </div>
 
-            {/* CURRENT CHAPTER INDICATOR (Subtle, hides the full tree) */}
             {currentChapter && (
               <div className="mb-8 border-t border-white/5 pt-6">
                 <div className="flex items-center gap-2 mb-2 text-amber-200/60">
@@ -121,7 +141,6 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
                 <h3 className="text-xl font-serif text-amber-100 italic">
                   "{currentChapter.title}"
                 </h3>
-                {/* Description is HIDDEN to prevent spoilers */}
               </div>
             )}
 
@@ -148,7 +167,7 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
             >
               {/* Message Bubble */}
               <div 
-                className={`max-w-[90%] md:max-w-[80%] rounded-2xl p-5 md:p-6 ${
+                className={`relative group max-w-[90%] md:max-w-[80%] rounded-2xl p-5 md:p-6 ${
                   msg.role === 'user' 
                     ? 'bg-slate-800/80 border border-slate-600/50 text-slate-100 rounded-tr-none' 
                     : 'bg-amber-950/20 border border-amber-200/10 text-slate-200 rounded-tl-none shadow-[0_0_30px_rgba(251,191,36,0.05)]'
@@ -160,6 +179,25 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
                  <div className="font-serif text-lg leading-relaxed whitespace-pre-wrap">
                    {msg.content}
                  </div>
+
+                 {/* Visualize Button (On-Demand) */}
+                 {msg.role === 'model' && !msg.imageUrl && (
+                    <div className="mt-3 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                       <button 
+                         onClick={() => handleGenerateImage(idx, msg.content)}
+                         disabled={generatingImgId !== null}
+                         className="flex items-center gap-2 text-xs text-amber-200/50 hover:text-amber-200 hover:bg-amber-200/10 px-2 py-1 rounded transition-all"
+                         title="Generate an image for this scene"
+                       >
+                         {generatingImgId === idx ? (
+                            <Sparkles className="w-3 h-3 animate-spin" />
+                         ) : (
+                            <Paintbrush className="w-3 h-3" />
+                         )}
+                         {generatingImgId === idx ? 'Painting...' : 'Visualize Scene'}
+                       </button>
+                    </div>
+                 )}
               </div>
 
               {/* Generated Image (If exists) */}
@@ -220,7 +258,7 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
                  value={inputText}
                  onChange={(e) => setInputText(e.target.value)}
                  onKeyDown={handleKeyPress}
-                 placeholder="What do you want to do?"
+                 placeholder="你想做什么或说什么？"
                  className="w-full bg-transparent border-none text-slate-100 placeholder-slate-500 focus:ring-0 resize-none p-3 max-h-32 min-h-[50px] font-serif text-lg"
                  rows={1}
                />
@@ -232,8 +270,8 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
                  <Send className="w-5 h-5" />
                </button>
             </div>
-            <p className="text-center text-xs text-slate-600 mt-2 font-mono">
-               Progress is saved automatically.
+            <p className="text-center text-xs text-slate-600 mt-2 font-serif italic tracking-wide">
+               你拥有自由意志。以上选择只是命运的低语。
             </p>
           </div>
         </div>
