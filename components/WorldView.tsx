@@ -2,20 +2,26 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { WorldState, Message, StoryNode } from '../types';
 import IdentityCard from './IdentityCard';
-import { sendChatMessage, generateImageForScene } from '../services/geminiService';
-import { ArrowLeft, Clock, Stars, Send, Sparkles, Map, BookOpen, Image as ImageIcon, Paintbrush } from 'lucide-react';
+import { sendChatMessage, generateImageForScene, generateVideoForScene } from '../services/geminiService';
+import { ArrowLeft, Clock, Stars, Send, Sparkles, Map, BookOpen, Image as ImageIcon, Paintbrush, Film, Loader2 } from 'lucide-react';
+import { TRANSLATIONS } from '../constants';
 
 interface Props {
   world: WorldState;
   onBack: () => void;
   onUpdateWorld: (updated: WorldState) => void;
+  language: 'en' | 'zh';
 }
 
-const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
+const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld, language }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [inputText, setInputText] = useState('');
   const [generatingImgId, setGeneratingImgId] = useState<number | null>(null);
+  const [generatingVideoId, setGeneratingVideoId] = useState<number | null>(null);
+  
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const t = TRANSLATIONS[language];
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -41,7 +47,7 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
 
     try {
       // 2. Get AI Response
-      const { message: aiMsg, updatedPlotTree } = await sendChatMessage(tempWorld, text);
+      const { message: aiMsg, updatedPlotTree } = await sendChatMessage(tempWorld, text, language);
       
       const finalWorld = {
         ...world,
@@ -59,7 +65,7 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
   };
 
   const handleGenerateImage = async (msgIndex: number, content: string) => {
-    if (generatingImgId !== null) return; // Prevent multiple concurrent gens
+    if (generatingImgId !== null || generatingVideoId !== null) return; 
     setGeneratingImgId(msgIndex);
 
     const newImageUrl = await generateImageForScene(content, world.visualStyle || 'fantasy');
@@ -72,10 +78,38 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
       };
       onUpdateWorld({ ...world, chatHistory: newHistory });
     } else {
-        // Fail silently or just reset button state
         console.warn("Image generation failed locally");
     }
     setGeneratingImgId(null);
+  };
+
+  const handleGenerateVideo = async (msgIndex: number, content: string) => {
+    if (generatingImgId !== null || generatingVideoId !== null) return;
+
+    // Veo model requires a selected paid API key
+    if ((window as any).aistudio) {
+        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+            await (window as any).aistudio.openSelectKey();
+            return; 
+        }
+    }
+
+    setGeneratingVideoId(msgIndex);
+
+    const newVideoUrl = await generateVideoForScene(content, world.visualStyle || 'fantasy');
+
+    if (newVideoUrl) {
+      const newHistory = [...world.chatHistory];
+      newHistory[msgIndex] = {
+        ...newHistory[msgIndex],
+        videoUrl: newVideoUrl
+      };
+      onUpdateWorld({ ...world, chatHistory: newHistory });
+    } else {
+        console.warn("Video generation failed locally");
+    }
+    setGeneratingVideoId(null);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -86,8 +120,6 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
   };
 
   const lastModelMessage = [...world.chatHistory].reverse().find(m => m.role === 'model');
-  
-  // Find current chapter for subtle display
   const currentChapter = world.plotTree?.find(n => n.status === 'active');
 
   return (
@@ -111,11 +143,11 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
               className="flex items-center text-slate-400 hover:text-white transition-colors mb-8 group"
             >
               <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
-              Save & Return
+              {t.saveReturn}
             </button>
 
             <div className="space-y-1 mb-6">
-              <span className="text-xs tracking-[0.2em] text-amber-200/70 uppercase">World Shard</span>
+              <span className="text-xs tracking-[0.2em] text-amber-200/70 uppercase">{t.worldShard}</span>
               <h1 className="text-3xl md:text-4xl font-serif text-white leading-tight">{world.name}</h1>
             </div>
 
@@ -129,14 +161,14 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
             </div>
 
             <div className="mb-8">
-               <IdentityCard identity={world.identity} />
+               <IdentityCard identity={world.identity} language={language} />
             </div>
 
             {currentChapter && (
               <div className="mb-8 border-t border-white/5 pt-6">
                 <div className="flex items-center gap-2 mb-2 text-amber-200/60">
                   <BookOpen className="w-4 h-4" />
-                  <span className="font-serif uppercase tracking-widest text-xs">Current Chapter</span>
+                  <span className="font-serif uppercase tracking-widest text-xs">{t.currentChapter}</span>
                 </div>
                 <h3 className="text-xl font-serif text-amber-100 italic">
                   "{currentChapter.title}"
@@ -180,28 +212,36 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
                    {msg.content}
                  </div>
 
-                 {/* Visualize Button (On-Demand) */}
-                 {msg.role === 'model' && !msg.imageUrl && (
-                    <div className="mt-3 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                 {/* Media Generation Buttons */}
+                 {msg.role === 'model' && !msg.imageUrl && !msg.videoUrl && (
+                    <div className="mt-3 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity gap-2">
+                       {/* Image Button */}
                        <button 
                          onClick={() => handleGenerateImage(idx, msg.content)}
-                         disabled={generatingImgId !== null}
+                         disabled={generatingImgId !== null || generatingVideoId !== null}
                          className="flex items-center gap-2 text-xs text-amber-200/50 hover:text-amber-200 hover:bg-amber-200/10 px-2 py-1 rounded transition-all"
-                         title="Generate an image for this scene"
+                         title={t.visualize}
                        >
-                         {generatingImgId === idx ? (
-                            <Sparkles className="w-3 h-3 animate-spin" />
-                         ) : (
-                            <Paintbrush className="w-3 h-3" />
-                         )}
-                         {generatingImgId === idx ? 'Painting...' : 'Visualize Scene'}
+                         {generatingImgId === idx ? <Loader2 className="w-3 h-3 animate-spin" /> : <Paintbrush className="w-3 h-3" />}
+                         {generatingImgId === idx ? t.painting : t.visualize}
+                       </button>
+
+                       {/* Video Button */}
+                       <button 
+                         onClick={() => handleGenerateVideo(idx, msg.content)}
+                         disabled={generatingImgId !== null || generatingVideoId !== null}
+                         className="flex items-center gap-2 text-xs text-emerald-200/50 hover:text-emerald-200 hover:bg-emerald-200/10 px-2 py-1 rounded transition-all"
+                         title={t.animate}
+                       >
+                         {generatingVideoId === idx ? <Loader2 className="w-3 h-3 animate-spin" /> : <Film className="w-3 h-3" />}
+                         {generatingVideoId === idx ? t.animating : t.animate}
                        </button>
                     </div>
                  )}
               </div>
 
-              {/* Generated Image (If exists) */}
-              {msg.imageUrl && (
+              {/* Generated Image */}
+              {msg.imageUrl && !msg.videoUrl && (
                 <div className={`mt-4 max-w-[90%] md:max-w-[80%] rounded-xl overflow-hidden border border-white/10 shadow-2xl animate-fade-in ${msg.role === 'user' ? 'mr-0' : 'ml-0'}`}>
                   <div className="relative group">
                      <img 
@@ -212,6 +252,27 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
                        <span className="text-xs text-amber-100/80 uppercase tracking-widest flex items-center gap-2">
                          <ImageIcon className="w-3 h-3" /> Generated Memory
+                       </span>
+                     </div>
+                  </div>
+                </div>
+              )}
+
+               {/* Generated Video */}
+              {msg.videoUrl && (
+                <div className={`mt-4 max-w-[90%] md:max-w-[80%] rounded-xl overflow-hidden border border-emerald-500/20 shadow-2xl animate-fade-in ${msg.role === 'user' ? 'mr-0' : 'ml-0'}`}>
+                  <div className="relative group bg-black">
+                     <video 
+                       src={msg.videoUrl} 
+                       controls
+                       autoPlay
+                       loop
+                       muted
+                       className="w-full h-auto"
+                     />
+                     <div className="absolute top-2 right-2 pointer-events-none">
+                       <span className="text-[10px] bg-black/50 text-emerald-200/80 px-2 py-1 rounded border border-emerald-500/20 uppercase tracking-widest flex items-center gap-1 backdrop-blur-sm">
+                         <Film className="w-3 h-3" /> Veo Scene
                        </span>
                      </div>
                   </div>
@@ -258,20 +319,22 @@ const WorldView: React.FC<Props> = ({ world, onBack, onUpdateWorld }) => {
                  value={inputText}
                  onChange={(e) => setInputText(e.target.value)}
                  onKeyDown={handleKeyPress}
-                 placeholder="你想做什么或说什么？"
+                 placeholder={t.placeholder}
                  className="w-full bg-transparent border-none text-slate-100 placeholder-slate-500 focus:ring-0 resize-none p-3 max-h-32 min-h-[50px] font-serif text-lg"
                  rows={1}
                />
-               <button 
-                 onClick={() => handleSend(inputText)}
-                 disabled={!inputText.trim() || isLoading}
-                 className="p-3 mb-1 rounded-lg bg-amber-200/10 hover:bg-amber-200/20 text-amber-200 disabled:opacity-30 transition-all"
-               >
-                 <Send className="w-5 h-5" />
-               </button>
+               <div className="flex flex-col gap-1 mb-1">
+                 <button 
+                   onClick={() => handleSend(inputText)}
+                   disabled={!inputText.trim() || isLoading}
+                   className="p-3 rounded-lg bg-amber-200/10 hover:bg-amber-200/20 text-amber-200 disabled:opacity-30 transition-all"
+                 >
+                   <Send className="w-5 h-5" />
+                 </button>
+               </div>
             </div>
             <p className="text-center text-xs text-slate-600 mt-2 font-serif italic tracking-wide">
-               你拥有自由意志。以上选择只是命运的低语。
+               {t.footer}
             </p>
           </div>
         </div>

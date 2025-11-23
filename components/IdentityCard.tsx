@@ -1,12 +1,17 @@
+
 import React from 'react';
 import { Identity } from '../types';
 import { User, Shield, Zap, Sparkles } from 'lucide-react';
+import { TRANSLATIONS } from '../constants';
 
 interface Props {
   identity: Identity;
+  language: 'en' | 'zh';
 }
 
-const IdentityCard: React.FC<Props> = ({ identity }) => {
+const IdentityCard: React.FC<Props> = ({ identity, language }) => {
+  const t = TRANSLATIONS[language];
+
   return (
     <div className="bg-slate-800/80 backdrop-blur-md border border-amber-200/20 p-6 rounded-lg shadow-xl max-w-sm w-full">
       <div className="flex items-center justify-between mb-4 border-b border-slate-700 pb-2">
@@ -18,7 +23,7 @@ const IdentityCard: React.FC<Props> = ({ identity }) => {
         <div className="flex items-start gap-3">
           <User className="w-4 h-4 mt-1 text-slate-400" />
           <div>
-            <span className="block text-xs uppercase tracking-wider text-slate-500">Role</span>
+            <span className="block text-xs uppercase tracking-wider text-slate-500">{t.role}</span>
             <span className="text-slate-200">{identity.role}</span>
           </div>
         </div>
@@ -26,7 +31,7 @@ const IdentityCard: React.FC<Props> = ({ identity }) => {
         <div className="flex items-start gap-3">
           <Zap className="w-4 h-4 mt-1 text-amber-400/80" />
           <div>
-            <span className="block text-xs uppercase tracking-wider text-slate-500">Ability</span>
+            <span className="block text-xs uppercase tracking-wider text-slate-500">{t.ability}</span>
             <span className="text-amber-100">{identity.ability}</span>
           </div>
         </div>
@@ -34,7 +39,7 @@ const IdentityCard: React.FC<Props> = ({ identity }) => {
         <div className="flex items-start gap-3">
           <Shield className="w-4 h-4 mt-1 text-rose-400/80" />
           <div>
-            <span className="block text-xs uppercase tracking-wider text-slate-500">Vulnerability</span>
+            <span className="block text-xs uppercase tracking-wider text-slate-500">{t.vulnerability}</span>
             <span className="text-rose-100">{identity.weakness}</span>
           </div>
         </div>

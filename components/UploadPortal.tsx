@@ -1,12 +1,17 @@
-import React, { useCallback } from 'react';
+
+import React from 'react';
 import { Upload, Loader2 } from 'lucide-react';
+import { TRANSLATIONS } from '../constants';
 
 interface Props {
   onUpload: (file: File) => void;
   isProcessing: boolean;
+  language: 'en' | 'zh';
 }
 
-const UploadPortal: React.FC<Props> = ({ onUpload, isProcessing }) => {
+const UploadPortal: React.FC<Props> = ({ onUpload, isProcessing, language }) => {
+  const t = TRANSLATIONS[language];
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       onUpload(e.target.files[0]);
@@ -26,16 +31,16 @@ const UploadPortal: React.FC<Props> = ({ onUpload, isProcessing }) => {
         {isProcessing ? (
           <div className="text-center space-y-3">
             <Loader2 className="w-10 h-10 text-amber-200 animate-spin mx-auto" />
-            <p className="text-amber-100 font-serif text-lg animate-pulse">Opening the Rift...</p>
+            <p className="text-amber-100 font-serif text-lg animate-pulse">{t.openingRift}</p>
           </div>
         ) : (
           <div className="text-center space-y-3 p-6">
             <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto border border-slate-600 group-hover:border-amber-200 group-hover:scale-110 transition-transform">
               <Upload className="w-8 h-8 text-slate-400 group-hover:text-amber-200" />
             </div>
-            <h3 className="text-xl font-serif text-slate-200 group-hover:text-white">Open a New Shard</h3>
+            <h3 className="text-xl font-serif text-slate-200 group-hover:text-white">{t.openShard}</h3>
             <p className="text-sm text-slate-400 max-w-xs mx-auto">
-              Upload an image to let the universe generate a new world, identity, and destiny for you.
+              {t.openShardDesc}
             </p>
           </div>
         )}

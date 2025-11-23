@@ -2,16 +2,20 @@
 import React, { useState } from 'react';
 import { Sparkles, Save } from 'lucide-react';
 import { UserProfile } from '../types';
+import { TRANSLATIONS } from '../constants';
 
 interface Props {
   existingProfile: UserProfile | null;
   onSave: (profile: UserProfile) => void;
+  language: 'en' | 'zh';
 }
 
-const SoulProfile: React.FC<Props> = ({ existingProfile, onSave }) => {
+const SoulProfile: React.FC<Props> = ({ existingProfile, onSave, language }) => {
   const [name, setName] = useState(existingProfile?.name || '');
   const [desc, setDesc] = useState(existingProfile?.description || '');
   const [isOpen, setIsOpen] = useState(!existingProfile);
+  
+  const t = TRANSLATIONS[language];
 
   const handleSave = () => {
     if (name.trim()) {
@@ -28,7 +32,7 @@ const SoulProfile: React.FC<Props> = ({ existingProfile, onSave }) => {
              <Sparkles className="w-5 h-5 text-amber-200" />
            </div>
            <div>
-             <h3 className="text-amber-100 font-serif">Soul Signature: {name}</h3>
+             <h3 className="text-amber-100 font-serif">{t.soulSignature}: {name}</h3>
              <p className="text-xs text-slate-400 truncate max-w-xs">{desc || "No analysis provided"}</p>
            </div>
         </div>
@@ -36,7 +40,7 @@ const SoulProfile: React.FC<Props> = ({ existingProfile, onSave }) => {
           onClick={() => setIsOpen(true)}
           className="text-xs text-slate-400 hover:text-amber-200 underline"
         >
-          Edit
+          {t.edit}
         </button>
       </div>
     );
@@ -48,17 +52,16 @@ const SoulProfile: React.FC<Props> = ({ existingProfile, onSave }) => {
       
       <div className="flex items-center gap-2 mb-4 text-amber-200">
         <Sparkles className="w-5 h-5" />
-        <h2 className="font-serif text-xl">Identity Calibration</h2>
+        <h2 className="font-serif text-xl">{t.identityTitle}</h2>
       </div>
       
       <p className="text-sm text-slate-300 mb-6">
-        Before you travel, tell the universe who you are. 
-        <span className="opacity-50 block mt-1 text-xs">Your MBTI, Astrology, or a simple self-reflection. This shapes your destiny in every world.</span>
+        {t.identityDesc}
       </p>
 
       <div className="space-y-4">
         <div>
-          <label className="block text-xs uppercase tracking-wider text-slate-500 mb-1">Traveler Name / Alias</label>
+          <label className="block text-xs uppercase tracking-wider text-slate-500 mb-1">{t.nameLabel}</label>
           <input 
             type="text" 
             value={name}
@@ -69,7 +72,7 @@ const SoulProfile: React.FC<Props> = ({ existingProfile, onSave }) => {
         </div>
         
         <div>
-          <label className="block text-xs uppercase tracking-wider text-slate-500 mb-1">Soul Analysis (Optional)</label>
+          <label className="block text-xs uppercase tracking-wider text-slate-500 mb-1">{t.analysisLabel}</label>
           <textarea 
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
@@ -84,7 +87,7 @@ const SoulProfile: React.FC<Props> = ({ existingProfile, onSave }) => {
           className="w-full bg-gradient-to-r from-amber-700/50 to-amber-600/50 hover:from-amber-600 hover:to-amber-500 text-amber-100 py-2 rounded-lg border border-amber-200/20 transition-all flex items-center justify-center gap-2 font-serif"
         >
           <Save className="w-4 h-4" />
-          Calibrate & Save
+          {t.calibrateSave}
         </button>
       </div>
     </div>

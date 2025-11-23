@@ -1,10 +1,13 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { SYSTEM_INSTRUCTION, GEN_WORLD_PROMPT } from "../constants";
+import { GET_SYSTEM_INSTRUCTION, GET_GEN_WORLD_PROMPT } from "../constants";
 import { Message, WorldState, UserProfile, StoryNode } from "../types";
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
+
+// Reusable aesthetic style for both images and videos
+const AESTHETIC_STYLE = "New Chinese style digital illustration, Guofeng, ethereal and dreamy atmosphere, semi-impasto style with watercolor textures, delicate brushstrokes. Lighting & Color: Soft cinematic lighting, volumetric lighting (sun rays), dappled light (komorebi), light and airy composition, muted pastel color palette, elegant aesthetic, high definition, 8k resolution, anime-influenced semi-realism.";
 
 export const fileToGenerativePart = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -35,17 +38,12 @@ export const urlToGenerativePart = async (url: string): Promise<string> => {
 };
 
 // Helper to generate an image strictly when requested
-// Returns undefined on failure instead of throwing, to avoid UI errors
 export const generateImageForScene = async (
   sceneDescription: string,
   visualStyle: string
 ): Promise<string | undefined> => {
-  // Updated Aesthetic based on user request
-  const aestheticStyle = "New Chinese style digital illustration, Guofeng, ethereal and dreamy atmosphere, semi-impasto style with watercolor textures, delicate brushstrokes. Lighting & Color: Soft cinematic lighting, volumetric lighting (sun rays), dappled light (komorebi), light and airy composition, muted pastel color palette, elegant aesthetic, high definition, 8k resolution, anime-influenced semi-realism.";
-
-  const prompt = `Scene Description: ${sceneDescription}. \n\nWorld Context: ${visualStyle}. \n\nArt Style & Aesthetic: ${aestheticStyle}`;
+  const prompt = `Scene Description: ${sceneDescription}. \n\nWorld Context: ${visualStyle}. \n\nArt Style & Aesthetic: ${AESTHETIC_STYLE}`;
   
-  // Increased length limit to accommodate the detailed style description
   const safePrompt = prompt.substring(0, 1500);
 
   // Strategy 1: Try Imagen 3.0
@@ -85,10 +83,54 @@ export const generateImageForScene = async (
   return undefined;
 };
 
+// Helper to generate a video using Veo
+export const generateVideoForScene = async (
+  sceneDescription: string,
+  visualStyle: string
+): Promise<string | undefined> => {
+  // Construct a prompt optimized for video movement
+  const prompt = `Cinematic shot, slow motion, atmospheric. ${sceneDescription}. \n\nStyle: ${AESTHETIC_STYLE}. \n\nWorld: ${visualStyle}`;
+  
+  try {
+    // 1. Initiate Video Generation
+    let operation = await ai.models.generateVideos({
+      model: 'veo-3.1-fast-generate-preview',
+      prompt: prompt,
+      config: {
+        numberOfVideos: 1,
+        resolution: '720p',
+        aspectRatio: '16:9'
+      }
+    });
+
+    // 2. Poll for completion
+    while (!operation.done) {
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5 seconds
+      operation = await ai.operations.getVideosOperation({ operation: operation });
+    }
+
+    // 3. Retrieve Result
+    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+    if (!downloadLink) return undefined;
+
+    // 4. Fetch the actual video bytes (proxy through fetch to attach API key)
+    const videoRes = await fetch(`${downloadLink}&key=${apiKey}`);
+    if (!videoRes.ok) throw new Error("Failed to fetch video bytes");
+    
+    const blob = await videoRes.blob();
+    return URL.createObjectURL(blob);
+
+  } catch (e) {
+    console.error("Video generation failed silently:", e);
+    return undefined;
+  }
+};
+
 
 export const generateWorldFromImage = async (
   imageBase64: string, 
   userProfile: UserProfile | null,
+  language: 'en' | 'zh',
   mimeType: string = 'image/jpeg'
 ): Promise<Partial<WorldState> & { openingNarrative: string, initialChoices: any[], plotTree: StoryNode[] }> => {
   try {
@@ -99,14 +141,18 @@ export const generateWorldFromImage = async (
     if (userProfile) {
       profileText = `Name: ${userProfile.name}, Analysis: ${userProfile.description}`;
     }
-    const specificPrompt = GEN_WORLD_PROMPT.replace('{{USER_PROFILE}}', profileText);
+    
+    const promptTemplate = GET_GEN_WORLD_PROMPT(language);
+    const systemInstruction = GET_SYSTEM_INSTRUCTION(language);
+    
+    const specificPrompt = promptTemplate.replace('{{USER_PROFILE}}', profileText);
 
     const response = await ai.models.generateContent({
       model,
       contents: {
         role: 'user',
         parts: [
-          { text: SYSTEM_INSTRUCTION },
+          { text: systemInstruction },
           { text: specificPrompt },
           {
             inlineData: {
@@ -146,10 +192,12 @@ export const generateWorldFromImage = async (
 
 export const sendChatMessage = async (
   currentWorld: WorldState, 
-  userMessage: string
+  userMessage: string,
+  language: 'en' | 'zh'
 ): Promise<{ message: Message, updatedPlotTree?: StoryNode[] }> => {
   try {
     const model = 'gemini-2.5-flash';
+    const systemInstruction = GET_SYSTEM_INSTRUCTION(language);
 
     const memoryContext = currentWorld.chatHistory.map(msg => 
       `${msg.role === 'user' ? 'User' : 'Atlas Keeper'}: ${msg.content}`
@@ -160,10 +208,11 @@ export const sendChatMessage = async (
     ).join("\n");
 
     const prompt = `
-      ${SYSTEM_INSTRUCTION}
+      ${systemInstruction}
 
       **Current World:** ${currentWorld.name}
-      **User:** ${currentWorld.identity.title}
+      **User Identity:** ${currentWorld.identity.title} (${currentWorld.identity.role})
+      **Language:** ${language === 'zh' ? 'Chinese (Simplified)' : 'English'}
       
       **Current Plot Status:**
       ${plotStatus}
@@ -216,18 +265,22 @@ export const sendChatMessage = async (
         content: parsed.content,
         choices: parsed.choices,
         timestamp: Date.now(),
-        // No automatic imageUrl anymore
       },
       updatedPlotTree: newPlotTree
     };
 
   } catch (error) {
     console.error("Gemini Chat Error:", error);
+    const fallbackText = language === 'zh' 
+      ? "多重宇宙的迷雾遮蔽了我的视线... (连接错误，请重试)" 
+      : "The mists of the multiverse obscure my vision... (Connection error, please try again)";
+    const fallbackChoice = language === 'zh' ? "重试" : "Try again";
+
     return {
       message: {
         role: 'model',
-        content: "The mists of the multiverse obscure my vision... (Connection error, please try again)",
-        choices: [{ id: 'retry', text: "Try again", intent: 'resolve' }],
+        content: fallbackText,
+        choices: [{ id: 'retry', text: fallbackChoice, intent: 'resolve' }],
         timestamp: Date.now()
       }
     };

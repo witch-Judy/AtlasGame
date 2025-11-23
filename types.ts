@@ -25,7 +25,8 @@ export interface Message {
   content: string;
   timestamp: number;
   choices?: NarrativeChoice[]; 
-  imageUrl?: string; // New: Image generated for this turn
+  imageUrl?: string; // Image generated for this turn
+  videoUrl?: string; // New: Video generated for this turn
 }
 
 export interface StoryNode {

@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
-import { PRESET_WORLDS } from './constants';
+import { PRESET_WORLDS, TRANSLATIONS } from './constants';
 import { WorldTemplate, WorldState, UserProfile } from './types';
 import UploadPortal from './components/UploadPortal';
 import WorldView from './components/WorldView';
 import SoulProfile from './components/SoulProfile';
 import { generateWorldFromImage, fileToGenerativePart, urlToGenerativePart } from './services/geminiService';
-import { Compass, Sparkles, Trash2, Play } from 'lucide-react';
+import { Compass, Sparkles, Trash2, Play, Globe } from 'lucide-react';
 
 const App: React.FC = () => {
   const [view, setView] = useState<'atlas' | 'world'>('atlas');
@@ -14,6 +14,9 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [customWorlds, setCustomWorlds] = useState<WorldTemplate[]>([]);
+  const [language, setLanguage] = useState<'en' | 'zh'>('zh');
+
+  const t = TRANSLATIONS[language];
 
   // Load Data
   useEffect(() => {
@@ -30,7 +33,19 @@ const App: React.FC = () => {
         setUserProfile(JSON.parse(savedProfile));
       } catch (e) { console.error("Profile load error", e); }
     }
+    
+    // Default to Chinese if browser is Chinese, otherwise check local storage or default to en
+    const savedLang = localStorage.getItem('cross_realm_lang');
+    if (savedLang === 'en' || savedLang === 'zh') {
+        setLanguage(savedLang);
+    } 
   }, []);
+
+  const toggleLanguage = () => {
+      const newLang = language === 'en' ? 'zh' : 'en';
+      setLanguage(newLang);
+      localStorage.setItem('cross_realm_lang', newLang);
+  };
 
   // Save Profile
   const handleSaveProfile = (profile: UserProfile) => {
@@ -52,15 +67,13 @@ const App: React.FC = () => {
   };
 
   // UPDATE WORLD STATE (Auto-Save Logic)
-  // This is called by WorldView whenever a message is sent/received
   const handleWorldUpdate = (updatedWorld: WorldState) => {
     setCurrentWorld(updatedWorld);
     
     if (updatedWorld.isCustom) {
-      // Find the template in customWorlds and update its internal state
       const updatedTemplates = customWorlds.map(w => {
         if (w.id === updatedWorld.id) {
-          return { ...w, savedState: updatedWorld }; // Save the full state into the template list
+          return { ...w, savedState: updatedWorld };
         }
         return w;
       });
@@ -70,19 +83,17 @@ const App: React.FC = () => {
 
   // ENTER WORLD
   const enterWorld = async (template: WorldTemplate) => {
-    // 1. Check if we have a saved state to resume
     if (template.isCustom && template.savedState) {
       setCurrentWorld(template.savedState);
       setView('world');
       return;
     }
 
-    // 2. If no saved state, generate new (for Presets or fresh Custom)
     setIsGenerating(true);
     try {
       let base64: string = await urlToGenerativePart(template.imageUrl);
 
-      const generatedData = await generateWorldFromImage(base64, userProfile);
+      const generatedData = await generateWorldFromImage(base64, userProfile, language);
       
       const newWorld: WorldState = {
         id: template.isCustom ? template.id : `preset-instance-${Date.now()}`,
@@ -102,7 +113,6 @@ const App: React.FC = () => {
         isCustom: template.isCustom || false
       };
 
-      // If it's custom, save this initial state immediately
       if (template.isCustom) {
         const updatedTemplates = customWorlds.map(w => 
           w.id === template.id ? { ...w, savedState: newWorld, name: newWorld.name } : w
@@ -114,7 +124,6 @@ const App: React.FC = () => {
       setView('world');
     } catch (e) {
       console.error(e);
-      // Silent failure is better than blocking alerts if API is glitchy
     } finally {
       setIsGenerating(false);
     }
@@ -132,7 +141,7 @@ const App: React.FC = () => {
         reader.onloadend = async () => {
           const dataUrl = reader.result as string;
           
-          const generatedData = await generateWorldFromImage(base64Data, userProfile, file.type);
+          const generatedData = await generateWorldFromImage(base64Data, userProfile, language, file.type);
           
           const newId = `custom-${Date.now()}`;
           const worldName = generatedData.name || "New Realm";
@@ -155,7 +164,6 @@ const App: React.FC = () => {
             isCustom: true
           };
 
-          // Create Template with Saved State
           const newTemplate: WorldTemplate = {
             id: newId,
             imageUrl: dataUrl,
@@ -174,7 +182,6 @@ const App: React.FC = () => {
 
     } catch (e) {
       console.error(e);
-      // Silent failure logs only
     } finally {
       setIsGenerating(false);
     }
@@ -186,6 +193,7 @@ const App: React.FC = () => {
         world={currentWorld} 
         onBack={() => setView('atlas')} 
         onUpdateWorld={handleWorldUpdate} 
+        language={language}
       />
     );
   }
@@ -196,20 +204,32 @@ const App: React.FC = () => {
       
       <div className="relative z-10 max-w-7xl mx-auto px-6 py-12">
         
-        <div className="text-center mb-12 space-y-4">
-          <div className="inline-flex items-center gap-2 text-amber-200/80 border border-amber-200/20 rounded-full px-4 py-1 mb-4 backdrop-blur-md">
-            <Compass className="w-4 h-4 animate-spin-slow" />
-            <span className="text-xs uppercase tracking-widest">Multiverse Navigation System</span>
-          </div>
-          <h1 className="text-5xl md:text-7xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-100 to-amber-400 drop-shadow-lg">
-            The Cross-Realm Atlas
-          </h1>
+        {/* Header & Lang Switcher */}
+        <div className="flex justify-between items-start mb-12">
+             <div className="space-y-4">
+                <div className="inline-flex items-center gap-2 text-amber-200/80 border border-amber-200/20 rounded-full px-4 py-1 mb-4 backdrop-blur-md">
+                    <Compass className="w-4 h-4 animate-spin-slow" />
+                    <span className="text-xs uppercase tracking-widest">{t.navSystem}</span>
+                </div>
+                <h1 className="text-5xl md:text-7xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-100 to-amber-400 drop-shadow-lg">
+                    {t.appTitle}
+                </h1>
+                <p className="text-slate-400 max-w-lg">{t.subtitle}</p>
+             </div>
+             
+             <button 
+               onClick={toggleLanguage}
+               className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/50 backdrop-blur border border-slate-600 rounded-full text-slate-300 text-sm transition-colors"
+             >
+                <Globe className="w-4 h-4" />
+                {language === 'en' ? 'CN' : 'EN'}
+             </button>
         </div>
 
-        <SoulProfile existingProfile={userProfile} onSave={handleSaveProfile} />
+        <SoulProfile existingProfile={userProfile} onSave={handleSaveProfile} language={language} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          <UploadPortal onUpload={handleUpload} isProcessing={isGenerating} />
+          <UploadPortal onUpload={handleUpload} isProcessing={isGenerating} language={language} />
 
           {[...customWorlds, ...PRESET_WORLDS].map((world, index) => (
             <div 
@@ -230,11 +250,11 @@ const App: React.FC = () => {
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs text-amber-200/80 uppercase tracking-wider block">
-                        {world.isCustom ? 'Archived Memory' : 'World Shard'}
+                        {world.isCustom ? t.archivedMemory : t.worldShard}
                       </span>
                       {world.savedState && (
                         <span className="flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-200 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                          <Play className="w-2 h-2" /> RESUME
+                          <Play className="w-2 h-2" /> {t.resume}
                         </span>
                       )}
                     </div>
@@ -261,12 +281,62 @@ const App: React.FC = () => {
           ))}
         </div>
 
+        {/* --- STARDUST PORTAL EFFECT --- */}
         {isGenerating && (
-           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md">
-             <div className="text-center">
-                <div className="w-16 h-16 border-4 border-amber-200 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                <h2 className="text-2xl font-serif text-amber-100 animate-pulse">Synchronizing Soul Frequency...</h2>
-                <p className="text-slate-400 mt-2">Weaving your profile into the narrative loom.</p>
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black animate-fade-in overflow-hidden">
+             {/* Background Nebulas */}
+             <div className="absolute inset-0 bg-black">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/20 rounded-full blur-[100px] animate-pulse"></div>
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-500/20 rounded-full blur-[80px] animate-pulse delay-75"></div>
+             </div>
+
+             {/* Particle Tunnel - Simulated with Rings */}
+             <div className="absolute inset-0 flex items-center justify-center">
+                 {[...Array(5)].map((_, i) => (
+                    <div 
+                       key={i}
+                       className="absolute rounded-full border border-blue-100/30 opacity-0"
+                       style={{
+                          width: `${(i+1) * 200}px`,
+                          height: `${(i+1) * 200}px`,
+                          animation: `ping 3s cubic-bezier(0, 0, 0.2, 1) infinite`,
+                          animationDelay: `${i * 0.4}s`
+                       }}
+                    />
+                 ))}
+                 {[...Array(12)].map((_, i) => (
+                    <div
+                      key={`star-${i}`}
+                      className="absolute w-1 h-1 bg-white rounded-full"
+                      style={{
+                        top: '50%',
+                        left: '50%',
+                        transform: `rotate(${i * 30}deg) translate(100px)`,
+                        animation: `spin 3s linear infinite reverse`, // Use a defined spin or standard transform for better performance, but here utilizing ping logic visual for simplicity
+                        boxShadow: '0 0 10px 2px rgba(255, 255, 255, 0.8)'
+                      }}
+                    />
+                 ))}
+             </div>
+
+             {/* Center Glow */}
+             <div className="relative z-10 text-center scale-110">
+                <div className="relative w-32 h-32 mx-auto mb-8">
+                   <div className="absolute inset-0 bg-white/10 rounded-full blur-xl animate-pulse"></div>
+                   <img 
+                     src="https://images.unsplash.com/photo-1464802686167-b939a6910659?q=80&w=200&auto=format&fit=crop" 
+                     className="w-full h-full object-cover rounded-full border-2 border-white/50 animate-[spin_10s_linear_infinite]"
+                     style={{ maskImage: 'radial-gradient(circle, black 40%, transparent 70%)' }}
+                     alt="Portal"
+                   />
+                </div>
+                
+                <h2 className="text-3xl font-serif text-transparent bg-clip-text bg-gradient-to-r from-blue-100 via-white to-purple-100 drop-shadow-[0_0_10px_rgba(255,255,255,0.5)] animate-pulse">
+                   {t.portalLoading}
+                </h2>
+                <p className="text-blue-200/60 mt-4 text-sm tracking-widest uppercase font-mono">
+                   {t.portalSub}
+                </p>
              </div>
            </div>
         )}
